@@ -1,46 +1,47 @@
 pragma solidity 0.4.11;
 
 import './RocketToken.sol';
-import '../zeppelin-solidity/contracts/crowdsale/Crowdsale.sol';
 import '../zeppelin-solidity/contracts/ownership/Ownable.sol';
 
 
-contract RocketTokenCrowdsale is Ownable, Crowdsale {
+contract Distributer is Ownable {
 
     using SafeMath for uint256;
  
     //operational
-    bool public LockupTokensWithdrawn = false;
-    uint256 public constant toDec = 10**2;
     uint256 public commited = 0;
     RocketToken token;
 
     
-    mapping (address => uint256) public saleRecord;
+    mapping (address => uint256) public commitments;
     mapping (address => uint256) public commitTime;
+    mapping (address => uint256) public commitDistributionsSnapshot;
     mapping (address => mapping (address => bool)) public gotAirdrop;
-    mapping(address => uint256) public tokenDistributions;
-    mapping(address => uint256) public tokenDistributionTimes;  
+    mapping (address => uint256) public tokenDistributions;
+    mapping (address => uint256) public tokenDistributionTimes;  
 
-    function RocketToken(address _otherOwner) OtherToken(_otherOwner){}  
+    function Distributer(address rocket){
+        token = RocketToken(rocket);
+    }  
 
     function distribute(address tokenAddress, uint256 amountToDistribute){
-        OtherToken tok = OtherToken(tokenAddress);
-        if(tok.balanceOf(msg.sender) >= amountToDistribute){
-            tok.burn(amountToDistribute);
+        MintableToken tok = MintableToken(tokenAddress);
+        if(tok.balances[msg.sender] >= amountToDistribute){
+            tok.balances[msg.sender] = tok.balances[msg.sender].sub(amountToDistribute);
             tokenDistributionTimes[tokenAddress] = now;
             tokenDistributions[tokenAddress] = tokenDistributions[tokenAddress].add(amountToDistribute);
+            commitDistributionsSnapshot[tokenAddress] = commited;
             Distributed(tokenAddress, amountToDistribute);
         }
         else {Failed(amountToDistribute, tokenAddress, amountToDistribute);}
     }
 
     function commit(address beneficiary, uint256 amountToCommit){
-        OtherToken tok = OtherToken(token);
-        if(tok.balanceOf(msg.sender) >= amountToCommit){
-            tok.burn(amountToCommit);
+        MintableToken tok = MintableToken(token);
+        if(tok.balances[msg.sender] >= amountToCommit){
+            tok.balances[msg.sender] = tok.balances[msg.sender].sub(amountToCommit);
             commitTime[beneficiary] = now;
-            saleRecord[beneficiary] = saleRecord[beneficiary].add(amountToCommit);
+            commitments[beneficiary] = commitments[beneficiary].add(amountToCommit);
             commited = commited.add(amountToCommit);
             Commited(beneficiary, amountToCommit);
         
@@ -49,10 +50,10 @@ contract RocketTokenCrowdsale is Ownable, Crowdsale {
     }
 
     function withdraw(address beneficiary, uint256 amountToWithdraw){
-        if(saleRecord[msg.sender] >= amountToWithdraw){
-            saleRecord[beneficiary] = saleRecord[beneficiary].sub(amountToWithdraw);
-            token.mint(beneficiary, amountToWithdraw);
+        if(commitments[msg.sender] >= amountToWithdraw){
+            commitments[msg.sender] = commitments[msg.sender].sub(amountToWithdraw);
             commited = commited.sub(amountToWithdraw);
+            tok.balances[beneficiary] = tok.balances[beneficiary].add(amountToWithdraw);
             Withdrawn(beneficiary, amountToWithdraw);
         }
         else {Failed(amountToWithdraw, msg.sender, amountToWithdraw);}
@@ -60,9 +61,10 @@ contract RocketTokenCrowdsale is Ownable, Crowdsale {
 
     function collect(address beneficiary, address tokenAddress){
         if(!gotAirdrop[tokenAddress][beneficiary] && commitTime[beneficiary] <= tokenDistributionTimes[tokenAddress]){
-            OtherToken tok = OtherToken(tokenAddress); 
-            uint256 amount = tokenDistributions[tokenAddress].mul(saleRecord[beneficiary]).div(commited);
-            tok.mint(beneficiary, amount);
+            MintableToken tok = MintableToken(tokenAddress); 
+            uint256 amount = tokenDistributions[tokenAddress].mul(commitments[beneficiary]).div(commitDistributionsSnapshot[tokenAddress]);
+            commited = commited.sub(amountToWithdraw);
+            tok.balances[msg.sender] = tok.balances[msg.sender].sub(amountToWithdraw);
             gotAirdrop[tokenAddress][beneficiary] = true;
             Collected(beneficiary, tokenAddress, amount);
         }
